@@ -728,30 +728,168 @@ class SetupManager:
             logger.error(f"Failed to update GitHub repository: {e}")
             return False
     
+    def check_all_requirements(self) -> Dict[str, bool]:
+        """Check all requirements and dependencies."""
+        requirements = {
+            "python_version": False,
+            "system_packages": False,
+            "python_packages": False,
+            "directories": False,
+            "services": False,
+            "config": False,
+            "permissions": False
+        }
+        
+        try:
+            # Check Python version
+            logger.info("Checking Python version...")
+            requirements["python_version"] = self.check_python_version()
+            
+            # Check system packages
+            logger.info("Checking system packages...")
+            missing_packages = self.check_system_packages()
+            requirements["system_packages"] = len(missing_packages) == 0
+            if missing_packages:
+                logger.warning(f"Missing system packages: {', '.join(missing_packages)}")
+            
+            # Check Python packages
+            logger.info("Checking Python packages...")
+            if os.path.exists(self.base_dir / "venv"):
+                venv_pip = str(self.base_dir / "venv" / ("Scripts" if self.os_type == "windows" else "bin") / "pip")
+                code, output = self._run_command([venv_pip, "freeze"])
+                installed_packages = {p.split("==")[0].lower() for p in output.split("\n") if p}
+                missing_py_packages = [p for p in self.python_packages if p.lower() not in installed_packages]
+                requirements["python_packages"] = len(missing_py_packages) == 0
+                if missing_py_packages:
+                    logger.warning(f"Missing Python packages: {', '.join(missing_py_packages)}")
+            
+            # Check directories
+            logger.info("Checking required directories...")
+            directories = {
+                "linux": ["/var/log/network-monitor", "/tmp/network-monitor"],
+                "windows": [
+                    os.path.expandvars("%PROGRAMDATA%\\NetworkMonitor\\logs"),
+                    os.path.expandvars("%PROGRAMDATA%\\NetworkMonitor\\temp")
+                ]
+            }
+            
+            all_dirs_exist = True
+            for directory in directories[self.os_type]:
+                if not os.path.exists(directory):
+                    all_dirs_exist = False
+                    logger.warning(f"Missing directory: {directory}")
+            requirements["directories"] = all_dirs_exist
+            
+            # Check services
+            logger.info("Checking required services...")
+            services = self.check_services()
+            requirements["services"] = all(services.values())
+            if not all(services.values()):
+                inactive_services = [s for s, running in services.items() if not running]
+                logger.warning(f"Inactive services: {', '.join(inactive_services)}")
+            
+            # Check configuration
+            logger.info("Checking configuration...")
+            config_exists = (self.base_dir / "config.yml").exists()
+            requirements["config"] = config_exists
+            if not config_exists:
+                logger.warning("Missing configuration file: config.yml")
+            
+            # Check permissions
+            logger.info("Checking permissions...")
+            if self.os_type == "linux":
+                # Check data directories permissions
+                data_dirs = ["/var/lib/mongodb", "/var/lib/mongo", "/var/log/mongodb"]
+                permissions_ok = True
+                for directory in data_dirs:
+                    if os.path.exists(directory):
+                        code, owner = self._run_command(["stat", "-c", "%U:%G", directory])
+                        if code == 0 and "mongodb:mongodb" not in owner.strip():
+                            permissions_ok = False
+                            logger.warning(f"Incorrect permissions on {directory}: {owner.strip()}")
+                requirements["permissions"] = permissions_ok
+            else:
+                requirements["permissions"] = True  # Windows handles permissions differently
+            
+            return requirements
+            
+        except Exception as e:
+            logger.error(f"Error checking requirements: {e}")
+            return requirements
+    
+    def fix_requirements(self, requirements: Dict[str, bool]) -> bool:
+        """Fix any missing or incorrect requirements."""
+        try:
+            if not requirements["python_version"]:
+                logger.error("Python version requirement cannot be fixed automatically")
+                return False
+            
+            if not requirements["system_packages"]:
+                logger.info("Installing missing system packages...")
+                if not self.install_system_packages(self.check_system_packages()):
+                    return False
+            
+            if not requirements["python_packages"]:
+                logger.info("Setting up Python environment...")
+                if not self.setup_virtual_environment():
+                    return False
+                if not self.install_python_packages():
+                    return False
+            
+            if not requirements["directories"]:
+                logger.info("Creating required directories...")
+                if not self.setup_directories():
+                    return False
+            
+            if not requirements["services"]:
+                logger.info("Starting required services...")
+                if not self.start_services(self.check_services()):
+                    return False
+            
+            if not requirements["config"]:
+                logger.info("Creating configuration file...")
+                if not self.create_config():
+                    return False
+            
+            if not requirements["permissions"]:
+                logger.info("Fixing permissions...")
+                if self.os_type == "linux":
+                    if not self._run_mongodb_diagnostics():
+                        return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error fixing requirements: {e}")
+            return False
+    
     def run_setup(self) -> bool:
         """Run the complete setup process."""
         logger.info("Starting Network Monitor setup...")
         
-        success = (
-            self.check_python_version()
-            and self.install_system_packages(self.check_system_packages())
-            and self.setup_virtual_environment()
-            and self.install_python_packages()
-            and self.setup_directories()
-            and self.start_services(self.check_services())
-            and self.create_config()
-        )
+        # Check all requirements first
+        requirements = self.check_all_requirements()
         
-        if success:
-            logger.info("Setup completed successfully!")
+        # If any requirements are not met, try to fix them
+        if not all(requirements.values()):
+            logger.info("Some requirements are not met. Attempting to fix...")
+            if not self.fix_requirements(requirements):
+                logger.error("Failed to fix all requirements")
+                return False
             
-            # Update GitHub repository
-            if not self.update_github():
-                logger.warning("Setup completed but failed to update GitHub repository")
-            
-            return True
-        else:
-            return False
+            # Check requirements again after fixing
+            requirements = self.check_all_requirements()
+            if not all(requirements.values()):
+                logger.error("Some requirements are still not met after attempting fixes")
+                return False
+        
+        logger.info("All requirements are met!")
+        
+        # Update GitHub repository
+        if not self.update_github():
+            logger.warning("Setup completed but failed to update GitHub repository")
+        
+        return True
 
 def main():
     setup = SetupManager()
@@ -760,7 +898,7 @@ def main():
 Network Monitor setup completed successfully!
 
 To start the application:
-1. Edit config.yml with your specific settings
+1. Edit config.yml with your specific settings (if you haven't already)
 2. Activate the virtual environment:
    - Windows: .\\venv\\Scripts\\activate
    - Linux: source venv/bin/activate
@@ -769,6 +907,18 @@ To start the application:
 
 For more information, please refer to the README.md file.
 """)
+        
+        # Try to start the application automatically
+        try:
+            venv_python = str(setup.base_dir / "venv" / ("Scripts" if setup.os_type == "windows" else "bin") / "python")
+            if os.path.exists(setup.base_dir / "src" / "main.py"):
+                logger.info("Starting the application...")
+                subprocess.Popen([venv_python, "src/main.py"])
+            else:
+                logger.error("Could not find src/main.py to start the application")
+        except Exception as e:
+            logger.error(f"Failed to start the application: {e}")
+        
         sys.exit(0)
     else:
         logger.error("Setup failed. Please check the error messages above.")
