@@ -437,6 +437,19 @@ class SetupManager:
         try:
             logger.info("Updating GitHub repository...")
             
+            # Check if git is installed
+            code, _ = self._run_command(["git", "--version"])
+            if code != 0:
+                logger.error("Git is not installed. Installing git...")
+                if self.os_type == "linux":
+                    code, output = self._run_command(["sudo", "apt", "install", "-y", "git"])
+                    if code != 0:
+                        logger.error(f"Failed to install git: {output}")
+                        return False
+                else:
+                    logger.error("Please install git manually on Windows")
+                    return False
+            
             # Check if git is initialized
             if not (self.base_dir / ".git").exists():
                 logger.info("Initializing git repository...")
@@ -444,29 +457,54 @@ class SetupManager:
                 if code != 0:
                     logger.error(f"Failed to initialize git repository: {output}")
                     return False
-                
-                # Configure git if not already configured
-                code, output = self._run_command(["git", "config", "user.name"])
-                if code != 0:
-                    code, _ = self._run_command(["git", "config", "--global", "user.name", "nobody9711"])
-                    if code != 0:
-                        logger.error("Failed to configure git username")
-                        return False
-                
-                code, output = self._run_command(["git", "config", "user.email"])
-                if code != 0:
-                    code, _ = self._run_command(["git", "config", "--global", "user.email", "jordanjohnson974@gmail.com"])
-                    if code != 0:
-                        logger.error("Failed to configure git email")
-                        return False
             
-            # Check if remote exists
-            code, output = self._run_command(["git", "remote"])
-            if "origin" not in (output or ""):
+            # Configure git if not already configured
+            code, name_output = self._run_command(["git", "config", "--get", "user.name"])
+            code2, email_output = self._run_command(["git", "config", "--get", "user.email"])
+            
+            if code != 0 or not name_output.strip():
+                # Try to get system username first
+                code, sys_user = self._run_command(["whoami"])
+                git_user = "nobody9711" if code != 0 else sys_user.strip()
+                code, _ = self._run_command(["git", "config", "--global", "user.name", git_user])
+                if code != 0:
+                    logger.error("Failed to configure git username")
+                    return False
+            
+            if code2 != 0 or not email_output.strip():
+                git_email = f"{name_output.strip() if name_output else 'user'}@{platform.node()}"
+                code, _ = self._run_command(["git", "config", "--global", "user.email", git_email])
+                if code != 0:
+                    logger.error("Failed to configure git email")
+                    return False
+            
+            # Check if remote exists and is correct
+            code, remote_output = self._run_command(["git", "remote", "-v"])
+            if code != 0 or "origin" not in (remote_output or ""):
+                # Remove existing origin if it exists but is wrong
+                if "origin" in (remote_output or ""):
+                    code, _ = self._run_command(["git", "remote", "remove", "origin"])
+                
                 logger.info("Adding GitHub remote...")
                 code, output = self._run_command(["git", "remote", "add", "origin", self.github_repo])
                 if code != 0:
                     logger.error(f"Failed to add GitHub remote: {output}")
+                    return False
+            elif self.github_repo not in (remote_output or ""):
+                # Update remote URL if it's different
+                code, output = self._run_command(["git", "remote", "set-url", "origin", self.github_repo])
+                if code != 0:
+                    logger.error(f"Failed to update remote URL: {output}")
+                    return False
+            
+            # Ensure we're on the correct branch
+            code, branch_output = self._run_command(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+            current_branch = branch_output.strip() if code == 0 else ""
+            
+            if current_branch != self.github_branch:
+                code, _ = self._run_command(["git", "checkout", "-B", self.github_branch])
+                if code != 0:
+                    logger.error(f"Failed to switch to {self.github_branch} branch")
                     return False
             
             # Add all changes
@@ -476,22 +514,35 @@ class SetupManager:
                 logger.error(f"Failed to add changes: {output}")
                 return False
             
-            # Commit changes
-            logger.info("Committing changes...")
-            commit_msg = "Update from setup script: " + ", ".join(sys.argv[1:]) if len(sys.argv) > 1 else "Update from setup script"
-            code, output = self._run_command(["git", "commit", "-m", commit_msg])
-            if code != 0 and "nothing to commit" not in (output or ""):
-                logger.error(f"Failed to commit changes: {output}")
-                return False
+            # Get status to check for changes
+            code, status_output = self._run_command(["git", "status", "--porcelain"])
+            if status_output.strip():
+                # Changes exist, commit them
+                logger.info("Committing changes...")
+                commit_msg = "Update from setup script: " + ", ".join(sys.argv[1:]) if len(sys.argv) > 1 else "Update from setup script"
+                code, output = self._run_command(["git", "commit", "-m", commit_msg])
+                if code != 0:
+                    logger.error(f"Failed to commit changes: {output}")
+                    return False
+                
+                # Pull latest changes first to avoid conflicts
+                logger.info("Pulling latest changes...")
+                code, output = self._run_command(["git", "pull", "--rebase", "origin", self.github_branch])
+                if code != 0:
+                    logger.warning(f"Failed to pull latest changes: {output}")
+                    # Continue anyway, as this might be the first push
+                
+                # Push changes
+                logger.info("Pushing changes to GitHub...")
+                code, output = self._run_command(["git", "push", "-u", "origin", self.github_branch])
+                if code != 0:
+                    logger.error(f"Failed to push changes: {output}")
+                    return False
+                
+                logger.info("Changes pushed to GitHub successfully!")
+            else:
+                logger.info("No changes to commit")
             
-            # Push changes
-            logger.info("Pushing changes to GitHub...")
-            code, output = self._run_command(["git", "push", "-u", "origin", self.github_branch])
-            if code != 0:
-                logger.error(f"Failed to push changes: {output}")
-                return False
-            
-            logger.info("GitHub repository updated successfully!")
             return True
             
         except Exception as e:
