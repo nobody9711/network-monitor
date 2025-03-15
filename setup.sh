@@ -19,12 +19,13 @@ chown -R $SUDO_USER:$SUDO_USER /var/log/network-monitor
 mkdir -p /tmp/network-monitor
 chown -R $SUDO_USER:$SUDO_USER /tmp/network-monitor
 
-# Ensure apt can handle HTTPS repositories
+# Ensure required packages are installed
+echo "Installing required packages..."
 apt update
-apt install -y apt-transport-https ca-certificates curl gnupg
+apt install -y apt-transport-https ca-certificates curl gnupg git
 
-# Run setup script
-python3 setup.py
+# Run setup script with any provided arguments
+python3 setup.py "$@"
 
 # Check if setup was successful
 if [ $? -eq 0 ]; then
@@ -39,6 +40,11 @@ if [ $? -eq 0 ]; then
     # Set correct ownership for the config file
     if [ -f "config.yml" ]; then
         chown $SUDO_USER:$SUDO_USER config.yml
+    fi
+    
+    # Set correct ownership for git directory
+    if [ -d ".git" ]; then
+        chown -R $SUDO_USER:$SUDO_USER .git
     fi
 else
     echo "Setup failed. Please check the error messages above."

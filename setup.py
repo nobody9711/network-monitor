@@ -74,6 +74,10 @@ class SetupManager:
                 "smbus2",
                 "gpiozero"
             ])
+        
+        # Add GitHub configuration
+        self.github_repo = "https://github.com/nobody9711/network-monitor.git"
+        self.github_branch = "main"
     
     def _check_raspberry_pi(self) -> bool:
         """Check if running on a Raspberry Pi."""
@@ -377,46 +381,96 @@ class SetupManager:
         
         return True
     
+    def update_github(self) -> bool:
+        """Update GitHub repository with latest changes."""
+        try:
+            logger.info("Updating GitHub repository...")
+            
+            # Check if git is initialized
+            if not (self.base_dir / ".git").exists():
+                logger.info("Initializing git repository...")
+                code, output = self._run_command(["git", "init"])
+                if code != 0:
+                    logger.error(f"Failed to initialize git repository: {output}")
+                    return False
+                
+                # Configure git if not already configured
+                code, output = self._run_command(["git", "config", "user.name"])
+                if code != 0:
+                    code, _ = self._run_command(["git", "config", "--global", "user.name", "nobody9711"])
+                    if code != 0:
+                        logger.error("Failed to configure git username")
+                        return False
+                
+                code, output = self._run_command(["git", "config", "user.email"])
+                if code != 0:
+                    code, _ = self._run_command(["git", "config", "--global", "user.email", "jordanjohnson974@gmail.com"])
+                    if code != 0:
+                        logger.error("Failed to configure git email")
+                        return False
+            
+            # Check if remote exists
+            code, output = self._run_command(["git", "remote"])
+            if "origin" not in (output or ""):
+                logger.info("Adding GitHub remote...")
+                code, output = self._run_command(["git", "remote", "add", "origin", self.github_repo])
+                if code != 0:
+                    logger.error(f"Failed to add GitHub remote: {output}")
+                    return False
+            
+            # Add all changes
+            logger.info("Adding changes...")
+            code, output = self._run_command(["git", "add", "."])
+            if code != 0:
+                logger.error(f"Failed to add changes: {output}")
+                return False
+            
+            # Commit changes
+            logger.info("Committing changes...")
+            commit_msg = "Update from setup script: " + ", ".join(sys.argv[1:]) if len(sys.argv) > 1 else "Update from setup script"
+            code, output = self._run_command(["git", "commit", "-m", commit_msg])
+            if code != 0 and "nothing to commit" not in (output or ""):
+                logger.error(f"Failed to commit changes: {output}")
+                return False
+            
+            # Push changes
+            logger.info("Pushing changes to GitHub...")
+            code, output = self._run_command(["git", "push", "-u", "origin", self.github_branch])
+            if code != 0:
+                logger.error(f"Failed to push changes: {output}")
+                return False
+            
+            logger.info("GitHub repository updated successfully!")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to update GitHub repository: {e}")
+            return False
+    
     def run_setup(self) -> bool:
         """Run the complete setup process."""
         logger.info("Starting Network Monitor setup...")
         
-        # Check Python version
-        if not self.check_python_version():
+        success = (
+            self.check_python_version()
+            and self.install_system_packages(self.check_system_packages())
+            and self.setup_virtual_environment()
+            and self.install_python_packages()
+            and self.setup_directories()
+            and self.start_services(self.check_services())
+            and self.create_config()
+        )
+        
+        if success:
+            logger.info("Setup completed successfully!")
+            
+            # Update GitHub repository
+            if not self.update_github():
+                logger.warning("Setup completed but failed to update GitHub repository")
+            
+            return True
+        else:
             return False
-        
-        # Check and install system packages
-        missing_packages = self.check_system_packages()
-        if missing_packages:
-            logger.info(f"Missing system packages: {', '.join(missing_packages)}")
-            if not self.install_system_packages(missing_packages):
-                return False
-        
-        # Setup virtual environment
-        if not self.setup_virtual_environment():
-            return False
-        
-        # Install Python packages
-        if not self.install_python_packages():
-            return False
-        
-        # Create necessary directories
-        if not self.setup_directories():
-            return False
-        
-        # Check and start services
-        services = self.check_services()
-        if not all(services.values()):
-            logger.info("Some services are not running")
-            if not self.start_services(services):
-                return False
-        
-        # Create initial configuration
-        if not self.create_config():
-            return False
-        
-        logger.info("Setup completed successfully!")
-        return True
 
 def main():
     setup = SetupManager()
