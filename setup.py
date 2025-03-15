@@ -312,7 +312,7 @@ class SetupManager:
         return True
     
     def setup_directories(self) -> bool:
-        """Create necessary directories."""
+        """Create necessary directories with proper permissions."""
         directories = {
             "linux": [
                 "/var/log/network-monitor",
@@ -324,13 +324,48 @@ class SetupManager:
             ]
         }
         
-        for directory in directories[self.os_type]:
-            try:
-                os.makedirs(directory, exist_ok=True)
-                logger.info(f"Created directory: {directory}")
-            except Exception as e:
-                logger.error(f"Failed to create directory {directory}: {e}")
-                return False
+        if self.os_type == "linux":
+            # Use sudo to create and set permissions for Linux directories
+            for directory in directories["linux"]:
+                try:
+                    # Create directory with sudo
+                    code, output = self._run_command(["sudo", "mkdir", "-p", directory])
+                    if code != 0:
+                        logger.error(f"Failed to create directory {directory}: {output}")
+                        return False
+                    
+                    # Get the current user
+                    code, user_output = self._run_command(["whoami"])
+                    if code != 0:
+                        logger.error("Failed to get current user")
+                        return False
+                    current_user = user_output.strip()
+                    
+                    # Set ownership to current user
+                    code, output = self._run_command(["sudo", "chown", f"{current_user}:{current_user}", directory])
+                    if code != 0:
+                        logger.error(f"Failed to set ownership for {directory}: {output}")
+                        return False
+                    
+                    # Set permissions (755 - user can read/write, others can read/execute)
+                    code, output = self._run_command(["sudo", "chmod", "755", directory])
+                    if code != 0:
+                        logger.error(f"Failed to set permissions for {directory}: {output}")
+                        return False
+                    
+                    logger.info(f"Created directory with proper permissions: {directory}")
+                except Exception as e:
+                    logger.error(f"Failed to setup directory {directory}: {e}")
+                    return False
+        else:
+            # Windows directory creation
+            for directory in directories["windows"]:
+                try:
+                    os.makedirs(directory, exist_ok=True)
+                    logger.info(f"Created directory: {directory}")
+                except Exception as e:
+                    logger.error(f"Failed to create directory {directory}: {e}")
+                    return False
         
         return True
     
