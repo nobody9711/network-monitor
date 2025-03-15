@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - pihole
+
+  pihole:
+    image: pihole/pihole:latest
+    # ... standard Pi-hole configuration
+
+  unbound:
+    image: klutchell/unbound:latest
+    # ... standard Unbound configuration
