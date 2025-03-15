@@ -1,132 +1,139 @@
 # Network Monitor
 
-A comprehensive network monitoring tool designed for Windows 11 and Raspberry Pi systems. This tool provides real-time monitoring of network traffic, device tracking, and system performance metrics with a modern web dashboard.
+A comprehensive network monitoring tool for Raspberry Pi and Windows systems, featuring integration with Pi-hole and Unbound DNS.
 
 ## Features
 
 - Real-time network monitoring and bandwidth tracking
-- Device discovery and tracking
-- System performance monitoring (CPU, Memory, Disk, Temperature)
+- Device discovery and management
+- System performance metrics
 - Security analysis and alerts
-- Modern web dashboard with real-time updates
-- Support for both Windows 11 and Raspberry Pi systems
-- Integration with Pi-hole and Unbound DNS (optional)
+- Integration with Pi-hole and Unbound
+- Modern web dashboard
+- Cross-platform support (Raspberry Pi and Windows)
 
 ## Requirements
 
-### Windows 11
-- Python 3.9 or higher
-- MongoDB (local or remote)
-- InfluxDB 2.x (local or remote)
-- Nmap for network scanning
-- Administrator privileges for WMI access
-
-### Optional Components
-- Pi-hole for DNS monitoring
+### Raspberry Pi / Linux
+- Raspberry Pi 5 (recommended) or compatible Linux system
+- Debian 12 Bookworm or compatible distribution
+- Python 3.8 or higher
+- MongoDB
+- InfluxDB
 - Unbound DNS resolver
+- Nmap
 
-## Installation
+### Windows
+- Windows 10/11
+- Python 3.8 or higher
+- MongoDB
+- InfluxDB
+- Unbound DNS resolver
+- Nmap
 
-1. Clone the repository:
+## Quick Start
+
+### Automated Installation
+
+#### On Raspberry Pi / Linux:
 ```bash
-git clone https://github.com/yourusername/network-monitor.git
+# Clone the repository
+git clone https://github.com/nobody9711/network-monitor.git
 cd network-monitor
+
+# Make the setup script executable
+chmod +x setup.sh
+
+# Run the setup script (requires sudo)
+sudo ./setup.sh
 ```
 
-2. Create a virtual environment:
-```bash
-python -m venv venv
-.\venv\Scripts\activate  # Windows
+#### On Windows:
+```powershell
+# Clone the repository
+git clone https://github.com/nobody9711/network-monitor.git
+cd network-monitor
+
+# Run the setup script as Administrator
+# Right-click setup.ps1 and select "Run as Administrator"
+# Or from an Administrator PowerShell:
+.\setup.ps1
 ```
 
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+The setup scripts will:
+1. Check and install system requirements
+2. Set up Python virtual environment
+3. Install Python dependencies
+4. Configure necessary services
+5. Create required directories
+6. Generate initial configuration
 
-4. Install Nmap:
-- Download and install Nmap from https://nmap.org/download.html
-- Add Nmap to your system PATH
+### Manual Installation
 
-5. Configure the application:
-```bash
-copy config.example.yml config.yml
-# Edit config.yml with your settings
-```
+If you prefer to install manually or the automated setup fails:
+
+1. Install system dependencies:
+   - MongoDB: [Download](https://www.mongodb.com/try/download/community)
+   - InfluxDB: [Download](https://portal.influxdata.com/downloads/)
+   - Unbound: [Download](https://nlnetlabs.nl/projects/unbound/download/)
+   - Nmap: [Download](https://nmap.org/download.html)
+
+2. Set up Python environment:
+   ```bash
+   # Create virtual environment
+   python -m venv venv
+   
+   # Activate virtual environment
+   # On Windows:
+   .\venv\Scripts\activate
+   # On Linux:
+   source venv/bin/activate
+   
+   # Install dependencies
+   pip install -r requirements.txt
+   ```
+
+3. Configure the application:
+   ```bash
+   # Copy example configuration
+   cp config.example.yml config.yml
+   # Edit config.yml with your settings
+   ```
 
 ## Configuration
 
-Edit `config.yml` to set up:
+The `config.yml` file contains all configuration options:
 
-- MongoDB connection details
-- InfluxDB connection details
-- Network scanning settings
-- Alert thresholds
-- Email notifications (optional)
-- Pi-hole integration (optional)
-- Unbound integration (optional)
+- System settings (logging, paths)
+- Network settings (interfaces, scan intervals)
+- Security settings (alert thresholds, email notifications)
+- Database settings (MongoDB, InfluxDB)
+- Dashboard settings (port, authentication)
+- Integration settings (Pi-hole, Unbound)
+- Platform-specific settings (Raspberry Pi GPIO, Windows services)
 
-## Running the Application
+## Usage
 
-1. Start the monitoring service:
-```bash
-python src/main.py
-```
+1. Start the application:
+   ```bash
+   # Activate virtual environment if not already active
+   source venv/bin/activate  # or .\venv\Scripts\activate on Windows
+   
+   # Run the application
+   python src/main.py
+   ```
 
 2. Access the dashboard:
-- Open your browser and navigate to `http://localhost:8050`
-- Default credentials: admin/admin
+   - Open a web browser
+   - Navigate to `http://localhost:8050` (or your configured port)
+   - Log in with your configured credentials
 
-## Dashboard Features
+## Development
 
-- Overview of network status
-- Real-time bandwidth graphs
-- Active device list with details
-- System performance metrics
-- Security alerts and notifications
-- Network interface statistics
-- DNS query analytics (if Pi-hole is configured)
-
-## Security Features
-
-- Network device tracking
-- Port scan detection
-- Bandwidth anomaly detection
-- New device alerts
-- Suspicious activity monitoring
-- Email notifications for security events
-
-## Windows-Specific Features
-
-- WMI integration for detailed system metrics
-- Network adapter monitoring
-- SMART disk information
-- Temperature monitoring (if supported by hardware)
-- Windows Event Log integration
-
-## Troubleshooting
-
-### Common Issues
-
-1. WMI Access Denied
-```
-Solution: Run the application as Administrator or grant WMI permissions to your user
-```
-
-2. Nmap Not Found
-```
-Solution: Ensure Nmap is installed and added to system PATH
-```
-
-3. Temperature Data Not Available
-```
-Solution: Temperature monitoring depends on hardware support and WMI access
-```
-
-### Logs
-
-- Application logs are stored in `logs/network-monitor.log`
-- Set log level in `config.yml` (default: INFO)
+- Python 3.8+ required
+- Use Black for code formatting
+- Follow PEP 8 style guide
+- Run tests with pytest
 
 ## Contributing
 
@@ -138,7 +145,13 @@ Solution: Temperature monitoring depends on hardware support and WMI access
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+- Open an issue for bug reports or feature requests
+- Check existing issues before creating new ones
+- Provide detailed information when reporting issues
 
 ## Acknowledgments
 
