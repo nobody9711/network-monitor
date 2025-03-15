@@ -1,0 +1,147 @@
+# Network Monitor Configuration
+
+# System Settings
+system:
+  # Operating system (linux)
+  os: linux
+  # Log level (DEBUG, INFO, WARNING, ERROR)
+  log_level: INFO
+  # Log file location
+  log_file: /var/log/network-monitor/network-monitor.log
+  # Temporary file directory
+  temp_dir: /tmp/network-monitor
+
+# Network Settings
+network:
+  # Network interface to monitor (leave empty for auto-detect)
+  interface: ""
+  # Network scan interval in seconds
+  scan_interval: 300
+  # Excluded IP addresses (will not be scanned)
+  excluded_ips:
+    - 127.0.0.1
+  # Excluded MAC addresses
+  excluded_macs: []
+  # Device tracking settings
+  device_tracking:
+    # How long to keep device history (days)
+    history_retention: 30
+    # Mark device as inactive after this many minutes
+    inactive_threshold: 60
+
+# Security Settings
+security:
+  # Enable security monitoring
+  enabled: true
+  # Alert thresholds
+  thresholds:
+    # Bandwidth spike threshold (MB/s)
+    bandwidth_spike: 50.0
+    # Connection rate threshold (connections per minute)
+    connection_rate: 100
+    # Port scan detection threshold (ports per minute)
+    port_scan: 10
+    # New device connection threshold
+    new_device_connections: 5
+  # Email alerts
+  email_alerts:
+    enabled: false
+    smtp_server: smtp.gmail.com
+    smtp_port: 587
+    smtp_user: your-email@gmail.com
+    smtp_password: your-app-password
+    from_address: your-email@gmail.com
+    to_addresses:
+      - admin@example.com
+
+# Database Settings
+databases:
+  # MongoDB settings
+  mongodb:
+    host: localhost
+    port: 27017
+    database: network_monitor
+    username: ""
+    password: ""
+    # Connection string (alternative to host/port)
+    uri: ""
+
+  # InfluxDB settings
+  influxdb:
+    url: http://localhost:8086
+    org: your-org
+    bucket: network_monitor
+    token: your-token
+
+# Dashboard Settings
+dashboard:
+  # Web interface settings
+  host: 0.0.0.0
+  port: 8050
+  # Authentication
+  auth:
+    enabled: true
+    username: admin
+    password: admin
+  # Theme (light or dark)
+  theme: dark
+  # Refresh interval (seconds)
+  refresh_interval: 30
+
+# Pi-hole Integration
+pihole:
+  enabled: true
+  host: localhost
+  port: 80
+  api_token: ""
+
+# Unbound Integration
+unbound:
+  enabled: true
+  control_interface: 127.0.0.1
+  control_port: 8953
+  # Path to unbound-control
+  control_path: /usr/sbin/unbound-control
+
+# Raspberry Pi Settings
+raspberry_pi:
+  # GPIO settings
+  gpio:
+    enabled: true
+    # LED pin for status indication
+    status_led_pin: 18
+    # Fan control
+    fan_control:
+      enabled: true
+      pin: 17
+      # Temperature thresholds for fan control (Celsius)
+      temp_threshold: 60
+      hysteresis: 5
+  
+  # Temperature monitoring
+  temperature:
+    # Maximum temperature threshold (Celsius)
+    max_temp: 80
+    # Warning temperature threshold (Celsius)
+    warning_temp: 70
+    # Check interval (seconds)
+    check_interval: 30
+  
+  # Performance settings
+  performance:
+    # Enable throttling detection
+    throttling_detection: true
+    # Enable voltage monitoring
+    voltage_monitoring: true
+    # Collection interval (seconds)
+    collection_interval: 30
+    
+  # Hardware monitoring
+    hardware_monitoring:
+      # Enable I2C monitoring (for additional sensors)
+      i2c_enabled: false
+      i2c_bus: 1
+      # Enable hardware watchdog
+      watchdog_enabled: true
+      # Watchdog timeout (seconds)
+      watchdog_timeout: 60 

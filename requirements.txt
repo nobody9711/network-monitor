@@ -1,0 +1,33 @@
+# Core dependencies
+Flask==2.0.1
+dash==2.9.3
+dash-bootstrap-components==1.4.1
+plotly==5.14.1
+
+# Database
+influxdb-client==1.36.1
+pymongo==4.3.3
+
+# System monitoring
+psutil==5.9.5
+python-nmap==0.7.1
+netifaces==0.11.0
+
+# Utilities
+requests==2.31.0
+python-dateutil==2.8.2
+humanize==4.6.0
+schedule==1.2.0
+
+# Logging
+python-json-logger==2.0.7
+
+# Development
+black==23.3.0
+flake8==6.0.0
+pytest==7.3.1
+
+# Linux-specific
+rpi.gpio==0.7.1  # For Raspberry Pi GPIO access
+smbus2==0.4.2    # For I2C communication
+gpiozero==1.6.2  # High-level GPIO interface 
