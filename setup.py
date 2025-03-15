@@ -130,6 +130,104 @@ class SetupManager:
         
         return missing_packages
     
+    def _run_mongodb_diagnostics(self) -> bool:
+        """Run comprehensive MongoDB diagnostics."""
+        logger.info("Running MongoDB diagnostics...")
+        
+        try:
+            # 1. Check MongoDB package status
+            code, pkg_status = self._run_command(["dpkg", "-l", "mongodb*"])
+            if code == 0:
+                logger.info(f"Installed MongoDB packages:\n{pkg_status}")
+            
+            # 2. Check repository configuration
+            code, repo_status = self._run_command(["cat", "/etc/apt/sources.list.d/mongodb-org-7.0.list"])
+            logger.info(f"MongoDB repository configuration:\n{repo_status}")
+            
+            # 3. Check data directory
+            data_dirs = ["/var/lib/mongodb", "/var/lib/mongo"]
+            for data_dir in data_dirs:
+                if os.path.exists(data_dir):
+                    # Check directory permissions
+                    code, perms = self._run_command(["ls", "-la", data_dir])
+                    logger.info(f"MongoDB data directory {data_dir} permissions:\n{perms}")
+                    
+                    # Check directory ownership
+                    code, owner = self._run_command(["stat", "-c", "%U:%G", data_dir])
+                    logger.info(f"MongoDB data directory {data_dir} owner: {owner}")
+                    
+                    # Fix permissions if needed
+                    if "mongodb:mongodb" not in owner.strip():
+                        logger.info(f"Fixing {data_dir} ownership...")
+                        self._run_command(["sudo", "chown", "-R", "mongodb:mongodb", data_dir])
+                        self._run_command(["sudo", "chmod", "-R", "755", data_dir])
+            
+            # 4. Check log file
+            log_file = "/var/log/mongodb/mongod.log"
+            if os.path.exists(log_file):
+                code, logs = self._run_command(["sudo", "tail", "-n", "20", log_file])
+                logger.info(f"Recent MongoDB logs:\n{logs}")
+            
+            # 5. Check systemd service status
+            code, service_status = self._run_command(["systemctl", "status", "mongod"])
+            logger.info(f"MongoDB service status:\n{service_status}")
+            
+            # 6. Check system resources
+            code, mem_info = self._run_command(["free", "-h"])
+            logger.info(f"System memory status:\n{mem_info}")
+            
+            code, disk_info = self._run_command(["df", "-h", "/var/lib/mongodb"])
+            logger.info(f"Disk space status:\n{disk_info}")
+            
+            # 7. Try to fix common issues
+            logger.info("Attempting to fix common issues...")
+            
+            # Ensure MongoDB user exists
+            code, _ = self._run_command(["id", "mongodb"])
+            if code != 0:
+                logger.info("Creating mongodb user...")
+                self._run_command(["sudo", "useradd", "-r", "-s", "/bin/false", "mongodb"])
+            
+            # Create required directories
+            dirs_to_create = [
+                "/var/lib/mongodb",
+                "/var/log/mongodb",
+                "/var/run/mongodb"
+            ]
+            
+            for directory in dirs_to_create:
+                if not os.path.exists(directory):
+                    logger.info(f"Creating directory: {directory}")
+                    self._run_command(["sudo", "mkdir", "-p", directory])
+                    self._run_command(["sudo", "chown", "mongodb:mongodb", directory])
+                    self._run_command(["sudo", "chmod", "755", directory])
+            
+            # Try to restart the service
+            logger.info("Attempting to restart MongoDB service...")
+            commands = [
+                ["sudo", "systemctl", "daemon-reload"],
+                ["sudo", "systemctl", "enable", "mongod"],
+                ["sudo", "systemctl", "restart", "mongod"]
+            ]
+            
+            for cmd in commands:
+                code, output = self._run_command(cmd)
+                if code != 0:
+                    logger.error(f"Failed to run '{' '.join(cmd)}': {output}")
+            
+            # Final status check
+            code, final_status = self._run_command(["systemctl", "is-active", "mongod"])
+            if code == 0:
+                logger.info("MongoDB service is now running!")
+                return True
+            else:
+                logger.error("MongoDB service failed to start after diagnostics")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Error during MongoDB diagnostics: {e}")
+            return False
+    
     def install_system_packages(self, packages: List[str]) -> bool:
         """Install missing system packages."""
         if not packages:
@@ -150,28 +248,18 @@ class SetupManager:
                     logger.error(f"Failed to install system packages: {output}")
                     return False
             
-            # Add MongoDB repository
+            # Add MongoDB repository for Debian 12 (Bookworm)
             logger.info("Adding MongoDB repository...")
             try:
                 # Import MongoDB public key
-                key_cmd = ["wget", "-qO", "-", "https://www.mongodb.org/static/pgp/server-7.0.asc", "|", "sudo", "apt-key", "add", "-"]
+                key_cmd = ["curl", "-fsSL", "https://pgp.mongodb.com/server-7.0.asc", "|", "sudo", "gpg", "-o", "/usr/share/keyrings/mongodb-server-7.0.gpg", "--dearmor"]
                 code, output = self._run_command(key_cmd)
                 if code != 0:
                     logger.error(f"Failed to download MongoDB key: {output}")
                     return False
                 
-                # Add MongoDB repository based on OS version
-                os_version = ""
-                try:
-                    with open("/etc/os-release") as f:
-                        for line in f:
-                            if line.startswith("VERSION_CODENAME="):
-                                os_version = line.split("=")[1].strip().strip('"')
-                                break
-                except Exception:
-                    os_version = "bullseye"  # Default to Debian 11/Raspberry Pi OS
-                
-                repo_content = f"deb http://repo.mongodb.org/apt/debian {os_version}/mongodb-org/7.0 main"
+                # Add MongoDB repository with signed-by option
+                repo_content = "deb [signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main"
                 with open("/tmp/mongodb-org-7.0.list", "w") as f:
                     f.write(repo_content)
                 
@@ -180,6 +268,13 @@ class SetupManager:
                 if code != 0:
                     logger.error(f"Failed to add MongoDB repository: {output}")
                     return False
+                
+                # Update package list
+                code, _ = self._run_command(["sudo", "apt", "update"])
+                if code != 0:
+                    logger.error("Failed to update package list after adding MongoDB repository")
+                    return False
+                
             except Exception as e:
                 logger.error(f"Failed to set up MongoDB repository: {e}")
                 return False
@@ -256,6 +351,11 @@ class SetupManager:
                         if code != 0:
                             logger.error(f"Failed to configure {service_name} service with alternative name: {output}")
                             return False
+            
+            # After installing MongoDB, run diagnostics
+            if not self._run_mongodb_diagnostics():
+                logger.warning("MongoDB installation completed but service diagnostics failed")
+                logger.info("Please check the logs above for detailed diagnostic information")
             
             return True
         
