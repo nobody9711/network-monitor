@@ -72,6 +72,20 @@ if not exist config.yml (
     )
 )
 
+:: Check if MongoDB is installed
+sc query MongoDB >nul 2>&1
+if %errorlevel% neq 0 (
+    echo %RED%Error: MongoDB service not found%RESET%
+    echo Please install MongoDB Community Edition:
+    echo 1. Download MongoDB Community Server from:
+    echo    https://www.mongodb.com/try/download/community
+    echo 2. Run the installer and select "Complete" installation
+    echo 3. Make sure to install MongoDB as a service
+    echo 4. After installation, run this script again
+    pause
+    exit /b 1
+)
+
 :: Check MongoDB service
 net start MongoDB >nul 2>&1
 if %errorlevel% neq 0 (
@@ -79,10 +93,29 @@ if %errorlevel% neq 0 (
     net start MongoDB >nul 2>&1
     if %errorlevel% neq 0 (
         echo %RED%Error: Failed to start MongoDB service%RESET%
-        echo Please ensure MongoDB is installed and the service is configured correctly
+        echo Please ensure MongoDB service is properly installed:
+        echo 1. Open Services (services.msc)
+        echo 2. Find "MongoDB" service
+        echo 3. Set Startup type to "Automatic"
+        echo 4. Start the service manually
+        echo 5. Run this script again
         pause
         exit /b 1
     )
+)
+
+:: Check if InfluxDB is installed
+sc query influxdb >nul 2>&1
+if %errorlevel% neq 0 (
+    echo %RED%Error: InfluxDB service not found%RESET%
+    echo Please install InfluxDB:
+    echo 1. Download InfluxDB from:
+    echo    https://portal.influxdata.com/downloads/
+    echo 2. Run the installer
+    echo 3. Make sure to install InfluxDB as a service
+    echo 4. After installation, run this script again
+    pause
+    exit /b 1
 )
 
 :: Check InfluxDB service
@@ -92,7 +125,12 @@ if %errorlevel% neq 0 (
     net start influxdb >nul 2>&1
     if %errorlevel% neq 0 (
         echo %RED%Error: Failed to start InfluxDB service%RESET%
-        echo Please ensure InfluxDB is installed and the service is configured correctly
+        echo Please ensure InfluxDB service is properly installed:
+        echo 1. Open Services (services.msc)
+        echo 2. Find "influxdb" service
+        echo 3. Set Startup type to "Automatic"
+        echo 4. Start the service manually
+        echo 5. Run this script again
         pause
         exit /b 1
     )
@@ -104,6 +142,7 @@ if exist src\main.py (
     python src\main.py
     if %errorlevel% neq 0 (
         echo %RED%Error: Application crashed or failed to start%RESET%
+        echo Check the logs in %PROGRAMDATA%\NetworkMonitor\logs for details
         pause
         exit /b 1
     )
