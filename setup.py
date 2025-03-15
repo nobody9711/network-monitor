@@ -396,15 +396,94 @@ class SetupManager:
                 logger.info(f"Starting {service}...")
                 
                 if self.os_type == "linux":
-                    commands = [
-                        ["sudo", "systemctl", "enable", service],
-                        ["sudo", "systemctl", "start", service]
-                    ]
+                    # Try both service names (e.g., mongodb and mongod)
+                    service_names = []
+                    if service == "mongodb":
+                        service_names = ["mongodb", "mongod"]
+                    elif service == "influxdb":
+                        service_names = ["influxdb", "influxdb2"]
+                    else:
+                        service_names = [service]
                     
-                    for cmd in commands:
-                        code, output = self._run_command(cmd)
-                        if code != 0:
-                            logger.error(f"Failed to start {service}: {output}")
+                    success = False
+                    error_messages = []
+                    
+                    for service_name in service_names:
+                        try:
+                            # Check if service exists
+                            code, output = self._run_command(["systemctl", "list-unit-files", f"{service_name}.service"])
+                            if code != 0 or f"{service_name}.service" not in output:
+                                error_messages.append(f"Service {service_name} not found")
+                                continue
+                            
+                            # Check service status for more detailed information
+                            code, status = self._run_command(["systemctl", "status", service_name])
+                            if "not-found" in (status or ""):
+                                error_messages.append(f"Service {service_name} not found")
+                                continue
+                            
+                            commands = [
+                                ["sudo", "systemctl", "daemon-reload"],
+                                ["sudo", "systemctl", "enable", service_name],
+                                ["sudo", "systemctl", "start", service_name]
+                            ]
+                            
+                            service_started = True
+                            for cmd in commands:
+                                code, output = self._run_command(cmd)
+                                if code != 0:
+                                    error_messages.append(f"Failed to run '{' '.join(cmd)}': {output}")
+                                    service_started = False
+                                    break
+                            
+                            if service_started:
+                                # Verify service is actually running
+                                code, status = self._run_command(["systemctl", "is-active", service_name])
+                                if code == 0:
+                                    logger.info(f"Service {service_name} started successfully")
+                                    success = True
+                                    break
+                                else:
+                                    error_messages.append(f"Service {service_name} failed to start properly")
+                            
+                        except Exception as e:
+                            error_messages.append(f"Error starting {service_name}: {str(e)}")
+                    
+                    if not success:
+                        # Log all collected error messages
+                        for error in error_messages:
+                            logger.error(error)
+                        
+                        # Try to get more diagnostic information
+                        try:
+                            # Check system logs for service errors
+                            code, logs = self._run_command(["journalctl", "-u", service_names[0], "-n", "10"])
+                            if code == 0 and logs:
+                                logger.error(f"Recent service logs:\n{logs}")
+                            
+                            # Check if MongoDB data directory exists and has correct permissions
+                            if service == "mongodb":
+                                data_dirs = ["/var/lib/mongodb", "/var/lib/mongo"]
+                                for data_dir in data_dirs:
+                                    if os.path.exists(data_dir):
+                                        code, output = self._run_command(["ls", "-l", data_dir])
+                                        if code == 0:
+                                            logger.info(f"MongoDB data directory permissions:\n{output}")
+                                        
+                                        # Fix permissions if needed
+                                        code, _ = self._run_command(["sudo", "chown", "-R", "mongodb:mongodb", data_dir])
+                                        code, _ = self._run_command(["sudo", "chmod", "-R", "755", data_dir])
+                                        
+                                        # Try starting the service again
+                                        code, _ = self._run_command(["sudo", "systemctl", "start", service_names[0]])
+                                        if code == 0:
+                                            logger.info(f"Service {service_names[0]} started after fixing permissions")
+                                            success = True
+                                            break
+                        except Exception as e:
+                            logger.error(f"Error during diagnostics: {str(e)}")
+                        
+                        if not success:
                             return False
                 
                 elif self.os_type == "windows":
