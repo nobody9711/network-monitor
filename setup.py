@@ -228,6 +228,64 @@ class SetupManager:
             logger.error(f"Error during MongoDB diagnostics: {e}")
             return False
     
+    def _install_windows_packages(self) -> bool:
+        """Install required packages on Windows."""
+        import urllib.request
+        import tempfile
+        import zipfile
+        
+        logger.info("Installing Windows packages...")
+        packages = {
+            "nmap": {
+                "url": "https://nmap.org/dist/nmap-7.94-setup.exe",
+                "filename": "nmap-setup.exe"
+            },
+            "mongodb": {
+                "url": "https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-6.0.13-signed.msi",
+                "filename": "mongodb-setup.msi"
+            },
+            "influxdb": {
+                "url": "https://dl.influxdata.com/influxdb/releases/influxdb2-2.7.5-windows-amd64.msi",
+                "filename": "influxdb-setup.msi"
+            }
+        }
+        
+        success = True
+        temp_dir = tempfile.gettempdir()
+        
+        for package, info in packages.items():
+            try:
+                logger.info(f"Downloading {package}...")
+                file_path = os.path.join(temp_dir, info["filename"])
+                
+                # Download the installer
+                urllib.request.urlretrieve(info["url"], file_path)
+                
+                # Install the package
+                logger.info(f"Installing {package}...")
+                if file_path.endswith(".msi"):
+                    code, output = self._run_command(["msiexec", "/i", file_path, "/quiet", "/norestart"])
+                else:
+                    code, output = self._run_command([file_path, "/S"])
+                
+                if code != 0:
+                    logger.error(f"Failed to install {package}: {output}")
+                    success = False
+                else:
+                    logger.info(f"{package} installed successfully")
+                
+                # Clean up
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+                
+            except Exception as e:
+                logger.error(f"Failed to install {package}: {e}")
+                success = False
+        
+        return success
+    
     def install_system_packages(self, packages: List[str]) -> bool:
         """Install missing system packages."""
         if not packages:
@@ -360,12 +418,7 @@ class SetupManager:
             return True
         
         elif self.os_type == "windows":
-            logger.info("Please install the following packages manually:")
-            logger.info("1. MongoDB: https://www.mongodb.com/try/download/community")
-            logger.info("2. InfluxDB: https://portal.influxdata.com/downloads/")
-            logger.info("3. Nmap: https://nmap.org/download.html")
-            logger.info("4. Unbound: https://nlnetlabs.nl/projects/unbound/download/")
-            return False
+            return self._install_windows_packages()
         
         return True
     
@@ -587,9 +640,84 @@ class SetupManager:
                             return False
                 
                 elif self.os_type == "windows":
-                    code, output = self._run_command(["net", "start", service])
-                    if code != 0:
-                        logger.error(f"Failed to start {service}: {output}")
+                    # Map service names to Windows service names
+                    service_map = {
+                        "mongodb": "MongoDB",
+                        "influxdb": "influxdb",
+                        "unbound": "unbound"
+                    }
+                    
+                    service_name = service_map.get(service, service)
+                    
+                    # Try to enable and start the service
+                    try:
+                        # Enable the service
+                        code, output = self._run_command(["sc", "config", service_name, "start=", "auto"])
+                        if code != 0:
+                            logger.error(f"Failed to configure {service} service: {output}")
+                            return False
+                        
+                        # Start the service
+                        code, output = self._run_command(["net", "start", service_name])
+                        if code != 0:
+                            logger.error(f"Failed to start {service} service: {output}")
+                            
+                            # Check if service exists
+                            code, status = self._run_command(["sc", "query", service_name])
+                            if code != 0:
+                                logger.error(f"Service {service} is not installed properly")
+                                
+                                # Try to fix MongoDB service
+                                if service == "mongodb":
+                                    logger.info("Attempting to fix MongoDB service...")
+                                    mongo_cmd = [
+                                        "mongod",
+                                        "--install",
+                                        "--serviceName", "MongoDB",
+                                        "--serviceDisplayName", "MongoDB",
+                                        "--dbpath", "C:\\data\\db",
+                                        "--logpath", "C:\\data\\log\\mongodb.log",
+                                        "--directoryperdb"
+                                    ]
+                                    
+                                    # Create directories
+                                    os.makedirs("C:\\data\\db", exist_ok=True)
+                                    os.makedirs("C:\\data\\log", exist_ok=True)
+                                    
+                                    code, output = self._run_command(mongo_cmd)
+                                    if code != 0:
+                                        logger.error(f"Failed to install MongoDB service: {output}")
+                                        return False
+                                    
+                                    # Try starting the service again
+                                    code, output = self._run_command(["net", "start", "MongoDB"])
+                                    if code != 0:
+                                        logger.error(f"Failed to start MongoDB service after installation: {output}")
+                                        return False
+                                
+                                # Try to fix InfluxDB service
+                                elif service == "influxdb":
+                                    logger.info("Attempting to fix InfluxDB service...")
+                                    influx_cmd = [
+                                        "influxd",
+                                        "--service", "install"
+                                    ]
+                                    
+                                    code, output = self._run_command(influx_cmd)
+                                    if code != 0:
+                                        logger.error(f"Failed to install InfluxDB service: {output}")
+                                        return False
+                                    
+                                    # Try starting the service again
+                                    code, output = self._run_command(["net", "start", "influxdb"])
+                                    if code != 0:
+                                        logger.error(f"Failed to start InfluxDB service after installation: {output}")
+                                        return False
+                            
+                            return False
+                        
+                    except Exception as e:
+                        logger.error(f"Error managing {service} service: {e}")
                         return False
         
         return True
