@@ -154,21 +154,24 @@ class SetupManager:
             logger.info("Adding MongoDB repository...")
             try:
                 # Import MongoDB public key
-                key_cmd = ["curl", "-fsSL", "https://pgp.mongodb.com/server-7.0.asc", "-o", "/tmp/mongodb.asc"]
+                key_cmd = ["wget", "-qO", "-", "https://www.mongodb.org/static/pgp/server-7.0.asc", "|", "sudo", "apt-key", "add", "-"]
                 code, output = self._run_command(key_cmd)
                 if code != 0:
                     logger.error(f"Failed to download MongoDB key: {output}")
                     return False
                 
-                # Add the key to apt
-                add_key_cmd = ["sudo", "gpg", "-o", "/usr/share/keyrings/mongodb-server-7.0.gpg", "--dearmor", "/tmp/mongodb.asc"]
-                code, output = self._run_command(add_key_cmd)
-                if code != 0:
-                    logger.error(f"Failed to add MongoDB key: {output}")
-                    return False
+                # Add MongoDB repository based on OS version
+                os_version = ""
+                try:
+                    with open("/etc/os-release") as f:
+                        for line in f:
+                            if line.startswith("VERSION_CODENAME="):
+                                os_version = line.split("=")[1].strip().strip('"')
+                                break
+                except Exception:
+                    os_version = "bullseye"  # Default to Debian 11/Raspberry Pi OS
                 
-                # Add MongoDB repository
-                repo_content = "deb [signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main"
+                repo_content = f"deb http://repo.mongodb.org/apt/debian {os_version}/mongodb-org/7.0 main"
                 with open("/tmp/mongodb-org-7.0.list", "w") as f:
                     f.write(repo_content)
                 
@@ -185,21 +188,14 @@ class SetupManager:
             logger.info("Adding InfluxDB repository...")
             try:
                 # Import InfluxDB public key
-                key_cmd = ["curl", "-fsSL", "https://repos.influxdata.com/influxdata-archive_compat.key", "-o", "/tmp/influxdb.key"]
+                key_cmd = ["wget", "-qO", "-", "https://repos.influxdata.com/influxdata-archive_compat.key", "|", "sudo", "apt-key", "add", "-"]
                 code, output = self._run_command(key_cmd)
                 if code != 0:
                     logger.error(f"Failed to download InfluxDB key: {output}")
                     return False
                 
-                # Add the key to apt
-                add_key_cmd = ["sudo", "gpg", "-o", "/usr/share/keyrings/influxdb-archive-keyring.gpg", "--dearmor", "/tmp/influxdb.key"]
-                code, output = self._run_command(add_key_cmd)
-                if code != 0:
-                    logger.error(f"Failed to add InfluxDB key: {output}")
-                    return False
-                
                 # Add InfluxDB repository
-                repo_content = "deb [signed-by=/usr/share/keyrings/influxdb-archive-keyring.gpg] https://repos.influxdata.com/debian stable main"
+                repo_content = "deb https://repos.influxdata.com/debian stable main"
                 with open("/tmp/influxdb.list", "w") as f:
                     f.write(repo_content)
                 
@@ -216,30 +212,50 @@ class SetupManager:
             logger.info("Installing MongoDB and InfluxDB...")
             commands = [
                 ["sudo", "apt", "update"],
-                ["sudo", "apt", "install", "-y", "mongodb-org", "influxdb2"]
+                ["sudo", "apt", "install", "-y", "mongodb-org"],
+                ["sudo", "apt", "install", "-y", "influxdb"]
             ]
             
             for cmd in commands:
                 code, output = self._run_command(cmd)
                 if code != 0:
-                    logger.error(f"Failed to install MongoDB/InfluxDB: {output}")
-                    return False
+                    logger.error(f"Failed to install package: {output}")
+                    logger.info("Attempting alternative package names...")
+                    
+                    # Try alternative package names
+                    if "mongodb-org" in cmd:
+                        alt_cmd = ["sudo", "apt", "install", "-y", "mongodb"]
+                        code, output = self._run_command(alt_cmd)
+                        if code != 0:
+                            logger.error(f"Failed to install MongoDB: {output}")
+                            return False
+                    elif "influxdb" in cmd:
+                        alt_cmd = ["sudo", "apt", "install", "-y", "influxdb2"]
+                        code, output = self._run_command(alt_cmd)
+                        if code != 0:
+                            logger.error(f"Failed to install InfluxDB: {output}")
+                            return False
             
             # Enable and start services
             logger.info("Enabling and starting services...")
-            services = ["mongod", "influxdb"]
-            for service in services:
+            services = [("mongodb", "mongod"), ("influxdb", "influxdb")]
+            for service_name, service_unit in services:
                 commands = [
                     ["sudo", "systemctl", "daemon-reload"],
-                    ["sudo", "systemctl", "enable", service],
-                    ["sudo", "systemctl", "start", service]
+                    ["sudo", "systemctl", "enable", service_unit],
+                    ["sudo", "systemctl", "start", service_unit]
                 ]
                 
                 for cmd in commands:
                     code, output = self._run_command(cmd)
                     if code != 0:
-                        logger.error(f"Failed to configure {service} service: {output}")
-                        return False
+                        logger.warning(f"Failed to configure {service_name} service: {output}")
+                        # Try alternative service name
+                        alt_cmd = [cmd[0], cmd[1], cmd[2], service_name]
+                        code, output = self._run_command(alt_cmd)
+                        if code != 0:
+                            logger.error(f"Failed to configure {service_name} service with alternative name: {output}")
+                            return False
             
             return True
         
