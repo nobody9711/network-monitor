@@ -1,79 +1,116 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: Set console title
-title Network Monitor
+:: Set color codes for output messages
+set "RED=[91m"
+set "GREEN=[92m"
+set "YELLOW=[93m"
+set "RESET=[0m"
 
-:: Check if running with administrator privileges
-net session >nul 2>&1
-if %errorLevel% neq 0 (
-    echo Please run this script as Administrator
-    echo Right-click on the script and select "Run as administrator"
+echo %GREEN%Starting Network Monitor Setup...%RESET%
+
+:: Check if Python is installed
+python --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo %RED%Error: Python is not installed or not in PATH%RESET%
+    echo Please install Python 3.8 or later from https://www.python.org/downloads/
     pause
     exit /b 1
 )
 
-:: Set paths
-set "BASE_DIR=%~dp0"
-set "VENV_DIR=%BASE_DIR%venv"
-set "PYTHON_EXE=%VENV_DIR%\Scripts\python.exe"
-set "PIP_EXE=%VENV_DIR%\Scripts\pip.exe"
-set "CONFIG_FILE=%BASE_DIR%config.yml"
-set "SETUP_SCRIPT=%BASE_DIR%setup.py"
-
-:: Check if virtual environment exists
-if not exist "%VENV_DIR%" (
-    echo Virtual environment not found. Running setup script...
-    python "%SETUP_SCRIPT%"
-    if !errorLevel! neq 0 (
-        echo Setup failed. Please check the error messages above.
+:: Check if virtual environment exists, create if not
+if not exist venv (
+    echo %YELLOW%Creating virtual environment...%RESET%
+    python -m venv venv
+    if %errorlevel% neq 0 (
+        echo %RED%Error: Failed to create virtual environment%RESET%
         pause
         exit /b 1
     )
 )
 
 :: Activate virtual environment
-call "%VENV_DIR%\Scripts\activate.bat"
-if !errorLevel! neq 0 (
-    echo Failed to activate virtual environment
+call venv\Scripts\activate
+if %errorlevel% neq 0 (
+    echo %RED%Error: Failed to activate virtual environment%RESET%
     pause
     exit /b 1
 )
 
-:: Check if config file exists
-if not exist "%CONFIG_FILE%" (
-    echo Configuration file not found. Running setup script...
-    python "%SETUP_SCRIPT%"
-    if !errorLevel! neq 0 (
-        echo Setup failed. Please check the error messages above.
+:: Install/upgrade pip
+python -m pip install --upgrade pip
+if %errorlevel% neq 0 (
+    echo %YELLOW%Warning: Failed to upgrade pip, continuing with existing version%RESET%
+)
+
+:: Install requirements
+echo %YELLOW%Installing requirements...%RESET%
+pip install -r requirements.txt
+if %errorlevel% neq 0 (
+    echo %RED%Error: Failed to install requirements%RESET%
+    pause
+    exit /b 1
+)
+
+:: Create necessary directories
+if not exist "%PROGRAMDATA%\NetworkMonitor\logs" (
+    mkdir "%PROGRAMDATA%\NetworkMonitor\logs"
+)
+if not exist "%PROGRAMDATA%\NetworkMonitor\temp" (
+    mkdir "%PROGRAMDATA%\NetworkMonitor\temp"
+)
+
+:: Check for config file
+if not exist config.yml (
+    if exist config.example.yml (
+        echo %YELLOW%Creating config.yml from example...%RESET%
+        copy config.example.yml config.yml
+    ) else (
+        echo %RED%Error: config.example.yml not found%RESET%
         pause
         exit /b 1
     )
 )
 
-:: Check services
-echo Checking required services...
-for %%s in (MongoDB InfluxDB Unbound) do (
-    sc query "%%s" >nul 2>&1
-    if !errorLevel! neq 0 (
-        echo Service %%s is not running. Starting...
-        net start "%%s" >nul 2>&1
-        if !errorLevel! neq 0 (
-            echo Failed to start %%s service. Please start it manually.
-        )
+:: Check MongoDB service
+net start MongoDB >nul 2>&1
+if %errorlevel% neq 0 (
+    echo %YELLOW%Warning: MongoDB service not running. Attempting to start...%RESET%
+    net start MongoDB >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo %RED%Error: Failed to start MongoDB service%RESET%
+        echo Please ensure MongoDB is installed and the service is configured correctly
+        pause
+        exit /b 1
     )
 )
 
-:: Run the application
-echo Starting Network Monitor...
-cd "%BASE_DIR%"
-python src/main.py
-
-:: Keep the window open if there's an error
-if !errorLevel! neq 0 (
-    echo Application exited with error code !errorLevel!
-    pause
+:: Check InfluxDB service
+net start influxdb >nul 2>&1
+if %errorlevel% neq 0 (
+    echo %YELLOW%Warning: InfluxDB service not running. Attempting to start...%RESET%
+    net start influxdb >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo %RED%Error: Failed to start InfluxDB service%RESET%
+        echo Please ensure InfluxDB is installed and the service is configured correctly
+        pause
+        exit /b 1
+    )
 )
 
-deactivate
+:: Start the application
+echo %GREEN%Starting Network Monitor...%RESET%
+if exist src\main.py (
+    python src\main.py
+    if %errorlevel% neq 0 (
+        echo %RED%Error: Application crashed or failed to start%RESET%
+        pause
+        exit /b 1
+    )
+) else (
+    echo %RED%Error: src\main.py not found%RESET%
+    pause
+    exit /b 1
+)
+
 endlocal 

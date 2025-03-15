@@ -27,7 +27,11 @@ black==23.3.0
 flake8==6.0.0
 pytest==7.3.1
 
-# Linux-specific
-rpi.gpio==0.7.1  # For Raspberry Pi GPIO access
-smbus2==0.4.2    # For I2C communication
-gpiozero==1.6.2  # High-level GPIO interface 
+# Windows-specific dependencies
+pywin32==306; sys_platform == 'win32'
+wmi==1.5.1; sys_platform == 'win32'
+
+# Raspberry Pi-specific dependencies
+RPi.GPIO==0.7.1; sys_platform == 'linux'
+smbus2==0.4.2; sys_platform == 'linux'
+gpiozero==1.6.2; sys_platform == 'linux' 
