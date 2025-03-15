@@ -32,12 +32,14 @@ class SetupManager:
         self.system_packages = {
             "linux": [
                 "nmap",
-                "mongodb",
-                "influxdb",
                 "unbound",
                 "python3-pip",
                 "python3-venv",
-                "git"
+                "git",
+                "gnupg",
+                "curl",
+                "apt-transport-https",
+                "software-properties-common"
             ],
             "windows": [
                 "nmap",
@@ -131,6 +133,8 @@ class SetupManager:
         
         if self.os_type == "linux":
             logger.info("Installing system packages with apt...")
+            
+            # First install basic requirements
             commands = [
                 ["sudo", "apt", "update"],
                 ["sudo", "apt", "install", "-y"] + packages
@@ -141,6 +145,99 @@ class SetupManager:
                 if code != 0:
                     logger.error(f"Failed to install system packages: {output}")
                     return False
+            
+            # Add MongoDB repository
+            logger.info("Adding MongoDB repository...")
+            try:
+                # Import MongoDB public key
+                key_cmd = ["curl", "-fsSL", "https://pgp.mongodb.com/server-7.0.asc", "-o", "/tmp/mongodb.asc"]
+                code, output = self._run_command(key_cmd)
+                if code != 0:
+                    logger.error(f"Failed to download MongoDB key: {output}")
+                    return False
+                
+                # Add the key to apt
+                add_key_cmd = ["sudo", "gpg", "-o", "/usr/share/keyrings/mongodb-server-7.0.gpg", "--dearmor", "/tmp/mongodb.asc"]
+                code, output = self._run_command(add_key_cmd)
+                if code != 0:
+                    logger.error(f"Failed to add MongoDB key: {output}")
+                    return False
+                
+                # Add MongoDB repository
+                repo_content = "deb [signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main"
+                with open("/tmp/mongodb-org-7.0.list", "w") as f:
+                    f.write(repo_content)
+                
+                mv_cmd = ["sudo", "mv", "/tmp/mongodb-org-7.0.list", "/etc/apt/sources.list.d/"]
+                code, output = self._run_command(mv_cmd)
+                if code != 0:
+                    logger.error(f"Failed to add MongoDB repository: {output}")
+                    return False
+            except Exception as e:
+                logger.error(f"Failed to set up MongoDB repository: {e}")
+                return False
+            
+            # Add InfluxDB repository
+            logger.info("Adding InfluxDB repository...")
+            try:
+                # Import InfluxDB public key
+                key_cmd = ["curl", "-fsSL", "https://repos.influxdata.com/influxdata-archive_compat.key", "-o", "/tmp/influxdb.key"]
+                code, output = self._run_command(key_cmd)
+                if code != 0:
+                    logger.error(f"Failed to download InfluxDB key: {output}")
+                    return False
+                
+                # Add the key to apt
+                add_key_cmd = ["sudo", "gpg", "-o", "/usr/share/keyrings/influxdb-archive-keyring.gpg", "--dearmor", "/tmp/influxdb.key"]
+                code, output = self._run_command(add_key_cmd)
+                if code != 0:
+                    logger.error(f"Failed to add InfluxDB key: {output}")
+                    return False
+                
+                # Add InfluxDB repository
+                repo_content = "deb [signed-by=/usr/share/keyrings/influxdb-archive-keyring.gpg] https://repos.influxdata.com/debian stable main"
+                with open("/tmp/influxdb.list", "w") as f:
+                    f.write(repo_content)
+                
+                mv_cmd = ["sudo", "mv", "/tmp/influxdb.list", "/etc/apt/sources.list.d/"]
+                code, output = self._run_command(mv_cmd)
+                if code != 0:
+                    logger.error(f"Failed to add InfluxDB repository: {output}")
+                    return False
+            except Exception as e:
+                logger.error(f"Failed to set up InfluxDB repository: {e}")
+                return False
+            
+            # Update package list and install MongoDB and InfluxDB
+            logger.info("Installing MongoDB and InfluxDB...")
+            commands = [
+                ["sudo", "apt", "update"],
+                ["sudo", "apt", "install", "-y", "mongodb-org", "influxdb2"]
+            ]
+            
+            for cmd in commands:
+                code, output = self._run_command(cmd)
+                if code != 0:
+                    logger.error(f"Failed to install MongoDB/InfluxDB: {output}")
+                    return False
+            
+            # Enable and start services
+            logger.info("Enabling and starting services...")
+            services = ["mongod", "influxdb"]
+            for service in services:
+                commands = [
+                    ["sudo", "systemctl", "daemon-reload"],
+                    ["sudo", "systemctl", "enable", service],
+                    ["sudo", "systemctl", "start", service]
+                ]
+                
+                for cmd in commands:
+                    code, output = self._run_command(cmd)
+                    if code != 0:
+                        logger.error(f"Failed to configure {service} service: {output}")
+                        return False
+            
+            return True
         
         elif self.os_type == "windows":
             logger.info("Please install the following packages manually:")
